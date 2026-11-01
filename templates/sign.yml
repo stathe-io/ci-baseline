@@ -1,0 +1,30 @@
+spec:
+  description: >-
+    Signs an image by digest with the key in the CI/CD file variable COSIGN_KEY
+    and its password in COSIGN_PASSWORD. There is no transparency log, so it
+    works inside an enclave. Run it only after the jobs that decide whether the
+    image may be signed.
+  inputs:
+    stage:
+      default: deploy
+    image:
+      description: The image to sign, pinned by digest.
+    http_registry:
+      type: boolean
+      default: false
+      description: The registry speaks plain http, as in a lab enclave.
+    cosign_image:
+      default: ghcr.io/sigstore/cosign/cosign:v3.1.4-dev@sha256:8af1a2cf9fba903fdfc6bdafdc25f7b13ef34ad722095543ea787fb96f7240c1
+---
+sign:
+  stage: $[[ inputs.stage ]]
+  image:
+    name: $[[ inputs.cosign_image ]]
+    entrypoint: [""]
+  script:
+    # The classic signature format: Kyverno finds it in any registry, also one
+    # without the OCI 1.1 referrers API.
+    - >-
+      cosign sign --key "$COSIGN_KEY" --new-bundle-format=false
+      --use-signing-config=false --tlog-upload=false
+      --allow-http-registry=$[[ inputs.http_registry ]] --yes "$[[ inputs.image ]]"

@@ -1,0 +1,31 @@
+spec:
+  description: >-
+    Writes a CycloneDX SBOM for an image, from the same offline Trivy database
+    the scan uses. The SBOM is kept as an artifact.
+  inputs:
+    stage:
+      default: test
+    image:
+      description: The image to describe, pinned by digest.
+    db_dir:
+      default: /trivy-cache
+    insecure_registry:
+      type: boolean
+      default: false
+    trivy_image:
+      default: aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+---
+sbom:
+  stage: $[[ inputs.stage ]]
+  image:
+    name: $[[ inputs.trivy_image ]]
+    entrypoint: [""]
+  variables:
+    TRIVY_INSECURE: "$[[ inputs.insecure_registry ]]"
+  script:
+    - cp -R "$[[ inputs.db_dir ]]" /tmp/trivy-cache
+    - >-
+      trivy image --cache-dir /tmp/trivy-cache --skip-db-update --skip-java-db-update
+      --offline-scan --format cyclonedx --output sbom.cdx.json "$[[ inputs.image ]]"
+  artifacts:
+    paths: [sbom.cdx.json]

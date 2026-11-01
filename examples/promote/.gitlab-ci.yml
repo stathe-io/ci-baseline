@@ -1,0 +1,29 @@
+# Promotes an image into the enclave. It scans the image, describes it and signs
+# it only if the scan passed. Admission then runs it. Nothing that skipped this
+# pipeline runs.
+#
+# The pipeline is nothing but components. Raising the bar, say failing on HIGH
+# as well, is a change to one input here or to one default in ci-baseline,
+# not to every pipeline that copied a script.
+#
+# Pin the components to a release in real use. @main keeps the example short.
+
+stages: [test, deploy]
+
+variables:
+  IMAGE:
+    description: The image to promote, pinned by digest.
+
+include:
+  - component: $CI_SERVER_FQDN/platform/ci-baseline/scan@main
+    inputs:
+      image: $IMAGE
+  - component: $CI_SERVER_FQDN/platform/ci-baseline/sbom@main
+    inputs:
+      image: $IMAGE
+  - component: $CI_SERVER_FQDN/platform/ci-baseline/sign@main
+    inputs:
+      image: $IMAGE
+
+sign:
+  needs: [scan, sbom]

@@ -1,0 +1,57 @@
+spec:
+  description: >-
+    Scans an image with Trivy against a vulnerability database the runner
+    provides. Fails on a vulnerability at the given severity that has a fix
+    available. Refuses to scan with a database older than the maximum age.
+  inputs:
+    stage:
+      default: test
+    image:
+      description: The image to scan, pinned by digest.
+    severity:
+      default: CRITICAL
+      description: Comma-separated severities that fail the job when a fix exists.
+    max_db_age_hours:
+      type: number
+      default: 168
+      description: The oldest database the scan accepts. Air-gapped runners get it by transfer.
+    db_dir:
+      default: /trivy-cache
+      description: Where the runner mounts the Trivy cache holding db/.
+    insecure_registry:
+      type: boolean
+      default: false
+      description: Allow a registry without TLS, such as one inside a lab enclave.
+    trivy_image:
+      default: aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+---
+scan:
+  stage: $[[ inputs.stage ]]
+  image:
+    name: $[[ inputs.trivy_image ]]
+    entrypoint: [""]
+  variables:
+    TRIVY_INSECURE: "$[[ inputs.insecure_registry ]]"
+  script:
+    # The scan knows only what the database knew when it was transferred. An
+    # old database is refused rather than trusted.
+    - |
+      updated=$(sed -E 's/.*"UpdatedAt":"([0-9-]+)T([0-9:]+).*/\1 \2/' "$[[ inputs.db_dir ]]/db/metadata.json")
+      age=$(( ($(date -u +%s) - $(date -u -d "$updated" +%s)) / 3600 ))
+      echo "vulnerability database updated $updated UTC, ${age}h old, maximum $[[ inputs.max_db_age_hours ]]h"
+      [ "$age" -le "$[[ inputs.max_db_age_hours ]]" ]
+    # Trivy writes to its cache while it scans, so it works on a copy.
+    - cp -R "$[[ inputs.db_dir ]]" /tmp/trivy-cache
+    - >-
+      trivy image --cache-dir /tmp/trivy-cache --skip-db-update --skip-java-db-update
+      --offline-scan --ignore-unfixed --severity "$[[ inputs.severity ]]"
+      --format json --output scan.json "$[[ inputs.image ]]"
+    # The report is kept whatever the outcome; the decision is made from it.
+    - trivy convert --format table scan.json
+    - |
+      found=$(grep -o '"VulnerabilityID"' scan.json | wc -l)
+      echo "$found fixable $[[ inputs.severity ]] findings"
+      [ "$found" -eq 0 ]
+  artifacts:
+    when: always
+    paths: [scan.json]
