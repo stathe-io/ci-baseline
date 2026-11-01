@@ -1,3 +1,23 @@
+# scan: checks an image for known vulnerabilities before it may be signed.
+#
+# What it does
+#   1. Checks that the vulnerability database is recent enough.
+#   2. Scans the image with Trivy, without internet.
+#   3. Fails the job if a vulnerability at `severity` has a fix available.
+#   The report scan.json is kept as an artifact, also when the job fails.
+#
+# What the runner needs
+#   The Trivy database mounted at `db_dir` (default /trivy-cache), so that
+#   /trivy-cache/db/trivy.db and /trivy-cache/db/metadata.json exist. In an
+#   air-gapped network that directory comes in with each transfer. See the
+#   README for the runner setting.
+#
+# How to read the result
+#   Passed: "0 fixable CRITICAL findings" at the end of the log.
+#   Failed on findings: the CVE IDs are listed above that line. Update the
+#   image to a version with the fix, or raise it with whoever owns the image.
+#   Failed on age: "vulnerability database updated ..., maximum ...h". The
+#   database is older than allowed. Bring in a new one with the next transfer.
 spec:
   description: >-
     Scans an image with Trivy against a vulnerability database the runner
@@ -6,24 +26,35 @@ spec:
   inputs:
     stage:
       default: test
+      description: The pipeline stage this job runs in.
     image:
-      description: The image to scan, pinned by digest.
+      description: >-
+        The image to scan, pinned by digest, for example
+        registry.enclave.example/app@sha256:... A tag alone is refused by
+        nothing here, but a tag can point somewhere else tomorrow.
     severity:
       default: CRITICAL
-      description: Comma-separated severities that fail the job when a fix exists.
+      description: >-
+        Which severities fail the job when a fix exists. Use CRITICAL,HIGH to
+        be stricter. Findings without a fix never fail the job.
     max_db_age_hours:
       type: number
       default: 168
-      description: The oldest database the scan accepts. Air-gapped runners get it by transfer.
+      description: >-
+        The oldest database the scan accepts, in hours. 168 is one week, which
+        matches a weekly transfer.
     db_dir:
       default: /trivy-cache
-      description: Where the runner mounts the Trivy cache holding db/.
+      description: Where the runner mounts the Trivy cache. It must contain db/.
     insecure_registry:
       type: boolean
       default: false
-      description: Allow a registry without TLS, such as one inside a lab enclave.
+      description: >-
+        Set to true only for a registry without TLS, such as a test setup.
+        A real enclave registry has a certificate from the enclave CA.
     trivy_image:
       default: aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+      description: The Trivy image, pinned by digest. It must be in your enclave registry.
 ---
 scan:
   stage: $[[ inputs.stage ]]
@@ -33,22 +64,24 @@ scan:
   variables:
     TRIVY_INSECURE: "$[[ inputs.insecure_registry ]]"
   script:
-    # The scan knows only what the database knew when it was transferred. An
-    # old database is refused rather than trusted.
+    # Step 1. Refuse an old database. A scan with old knowledge passes images
+    # that have known problems.
     - |
       updated=$(sed -E 's/.*"UpdatedAt":"([0-9-]+)T([0-9:]+).*/\1 \2/' "$[[ inputs.db_dir ]]/db/metadata.json")
       age=$(( ($(date -u +%s) - $(date -u -d "$updated" +%s)) / 3600 ))
       echo "vulnerability database updated $updated UTC, ${age}h old, maximum $[[ inputs.max_db_age_hours ]]h"
       [ "$age" -le "$[[ inputs.max_db_age_hours ]]" ]
-    # Trivy writes to its cache while it scans, so it works on a copy.
+    # Step 2. Trivy writes to its cache while it scans. The mount is read-only,
+    # so it works on a copy.
     - cp -R "$[[ inputs.db_dir ]]" /tmp/trivy-cache
+    # Step 3. Scan offline. --skip-db-update and --offline-scan keep Trivy from
+    # trying the internet. --ignore-unfixed leaves out what nobody can fix yet.
     - >-
       trivy image --cache-dir /tmp/trivy-cache --skip-db-update --skip-java-db-update
       --offline-scan --scanners vuln --ignore-unfixed --severity "$[[ inputs.severity ]]"
       --format json --output scan.json "$[[ inputs.image ]]"
-    # The report is kept whatever the outcome. The decision is made from it.
-    # GitLab runs this with pipefail, so a clean report must not end the job
-    # through grep finding nothing.
+    # Step 4. Decide from the report. GitLab runs scripts with pipefail, so
+    # grep finding nothing must not end the job: hence the || true.
     - |
       grep -o '"VulnerabilityID": *"[^"]*"' scan.json | sort -u || true
       found=$(grep -o '"VulnerabilityID"' scan.json | wc -l || true)

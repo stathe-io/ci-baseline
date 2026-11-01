@@ -1,3 +1,17 @@
+# sbom: writes a list of everything inside an image (a Software Bill of
+# Materials) in CycloneDX format. It keeps it as the artifact sbom.cdx.json.
+#
+# Why
+#   When a new vulnerability is published, the SBOM answers "do we run this
+#   package anywhere?" without scanning every image again. Auditors also ask
+#   for it.
+#
+# What the runner needs
+#   The same Trivy database mount as the scan component (see scan.yml).
+#
+# How to check
+#   The job passes and the artifact sbom.cdx.json is attached to it. Open it
+#   and you see one "components" entry per package in the image.
 spec:
   description: >-
     Writes a CycloneDX SBOM for an image, from the same offline Trivy database
@@ -5,15 +19,19 @@ spec:
   inputs:
     stage:
       default: test
+      description: The pipeline stage this job runs in.
     image:
-      description: The image to describe, pinned by digest.
+      description: The image to describe, pinned by digest. Use the same value as for scan.
     db_dir:
       default: /trivy-cache
+      description: Where the runner mounts the Trivy cache. It must contain db/.
     insecure_registry:
       type: boolean
       default: false
+      description: Set to true only for a registry without TLS, such as a test setup.
     trivy_image:
       default: aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c
+      description: The Trivy image, pinned by digest. It must be in your enclave registry.
 ---
 sbom:
   stage: $[[ inputs.stage ]]
@@ -23,7 +41,9 @@ sbom:
   variables:
     TRIVY_INSECURE: "$[[ inputs.insecure_registry ]]"
   script:
+    # The mount is read-only and Trivy writes to its cache, so it works on a copy.
     - cp -R "$[[ inputs.db_dir ]]" /tmp/trivy-cache
+    # Offline: no database download, no lookups on the internet.
     - >-
       trivy image --cache-dir /tmp/trivy-cache --skip-db-update --skip-java-db-update
       --offline-scan --format cyclonedx --output sbom.cdx.json "$[[ inputs.image ]]"

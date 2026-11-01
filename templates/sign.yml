@@ -1,3 +1,25 @@
+# sign: puts a signature on an image so the cluster lets it run.
+#
+# What it does
+#   Signs the image by digest with your signing key. The cluster's admission
+#   policy runs only images with this signature, so this job is the step that
+#   says "this image passed our checks".
+#
+# Run it last
+#   Give the job `needs: [scan, sbom]` in your pipeline (the example does).
+#   Then it only runs when both passed. Signing an image that skipped the scan
+#   defeats the point.
+#
+# What the project needs, under Settings > CI/CD > Variables
+#   COSIGN_KEY       Type "File". The private key, the contents of cosign.key.
+#   COSIGN_PASSWORD  Type "Variable", masked. The key's password.
+#   Create the key once with: cosign generate-key-pair
+#   Give cosign.pub to whoever configures admission in the cluster. Keep
+#   cosign.key out of Git.
+#
+# How to check
+#   cosign verify --key cosign.pub --insecure-ignore-tlog <image@sha256:...>
+#   ends with "The signatures were verified against the specified public key".
 spec:
   description: >-
     Signs an image by digest with the key in the CI/CD file variable COSIGN_KEY
@@ -7,14 +29,18 @@ spec:
   inputs:
     stage:
       default: deploy
+      description: The pipeline stage this job runs in. Put it after the stage of scan and sbom.
     image:
-      description: The image to sign, pinned by digest.
+      description: The image to sign, pinned by digest. Use the same value as for scan.
     http_registry:
       type: boolean
       default: false
-      description: The registry speaks plain http, as in a lab enclave.
+      description: Set to true only for a registry without TLS, such as a test setup.
     cosign_image:
       default: ghcr.io/sigstore/cosign/cosign:v3.1.4-dev@sha256:8af1a2cf9fba903fdfc6bdafdc25f7b13ef34ad722095543ea787fb96f7240c1
+      description: >-
+        The cosign image, pinned by digest. The -dev variant, because GitLab
+        needs a shell in the image and the plain one has none.
 ---
 sign:
   stage: $[[ inputs.stage ]]
@@ -22,8 +48,9 @@ sign:
     name: $[[ inputs.cosign_image ]]
     entrypoint: [""]
   script:
-    # The classic signature format: Kyverno finds it in any registry, also one
-    # without the OCI 1.1 referrers API.
+    # No transparency log: the enclave cannot reach one. The classic signature
+    # format, because Kyverno finds it in any registry. A registry with TLS and
+    # the OCI 1.1 referrers API also reads the newer format.
     - >-
       cosign sign --key "$COSIGN_KEY" --new-bundle-format=false
       --use-signing-config=false --tlog-upload=false
