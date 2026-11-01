@@ -20,4 +20,6 @@ include:
 
 [examples/promote](examples/promote) scans, describes and signs an image.
 
-Not yet run in a GitLab instance.
+Run in GitLab CE 19.4.5 with a Docker runner. A clean image passes and is
+signed. An image with fixable critical findings fails the scan and is not
+signed. The Trivy database came from a bundle, mounted read-only.
