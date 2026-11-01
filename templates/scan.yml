@@ -44,12 +44,14 @@ scan:
     - cp -R "$[[ inputs.db_dir ]]" /tmp/trivy-cache
     - >-
       trivy image --cache-dir /tmp/trivy-cache --skip-db-update --skip-java-db-update
-      --offline-scan --ignore-unfixed --severity "$[[ inputs.severity ]]"
+      --offline-scan --scanners vuln --ignore-unfixed --severity "$[[ inputs.severity ]]"
       --format json --output scan.json "$[[ inputs.image ]]"
-    # The report is kept whatever the outcome; the decision is made from it.
-    - trivy convert --format table scan.json
+    # The report is kept whatever the outcome. The decision is made from it.
+    # GitLab runs this with pipefail, so a clean report must not end the job
+    # through grep finding nothing.
     - |
-      found=$(grep -o '"VulnerabilityID"' scan.json | wc -l)
+      grep -o '"VulnerabilityID": *"[^"]*"' scan.json | sort -u || true
+      found=$(grep -o '"VulnerabilityID"' scan.json | wc -l || true)
       echo "$found fixable $[[ inputs.severity ]] findings"
       [ "$found" -eq 0 ]
   artifacts:
