@@ -3,7 +3,7 @@
 # pipeline runs.
 #
 # The pipeline is nothing but components. Raising the bar, say failing on HIGH
-# as well, is a change to one input here or to one default in ci-baseline,
+# as well, is a change to one input here or to one default in pipeline-templates,
 # not to every pipeline that copied a script.
 #
 # Pin the components to a release in real use. @main keeps the example short.
@@ -15,13 +15,13 @@ variables:
     description: The image to promote, pinned by digest.
 
 include:
-  - component: $CI_SERVER_FQDN/platform/ci-baseline/scan@main
+  - component: $CI_SERVER_FQDN/platform/pipeline-templates/scan@main
     inputs:
       image: $IMAGE
-  - component: $CI_SERVER_FQDN/platform/ci-baseline/sbom@main
+  - component: $CI_SERVER_FQDN/platform/pipeline-templates/sbom@main
     inputs:
       image: $IMAGE
-  - component: $CI_SERVER_FQDN/platform/ci-baseline/sign@main
+  - component: $CI_SERVER_FQDN/platform/pipeline-templates/sign@main
     inputs:
       image: $IMAGE
 

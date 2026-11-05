@@ -1,4 +1,4 @@
-# ci-baseline
+# pipeline-templates
 
 GitLab CI/CD components for secure and air-gapped environments.
 
@@ -23,7 +23,7 @@ Each file explains its settings at the top.
 stages: [test]
 
 include:
-  - component: $CI_SERVER_FQDN/platform/ci-baseline/secrets@1.0.0
+  - component: $CI_SERVER_FQDN/platform/pipeline-templates/secrets@1.0.0
 ```
 
 For `verify`, add `cosign.pub` as the file variable `COSIGN_PUB` and put it in
@@ -31,7 +31,7 @@ front of your deploy:
 
 ```yaml
 include:
-  - component: $CI_SERVER_FQDN/platform/ci-baseline/verify@1.0.0
+  - component: $CI_SERVER_FQDN/platform/pipeline-templates/verify@1.0.0
     inputs:
       image: $IMAGE
 
@@ -44,7 +44,7 @@ deploy:
 Do these steps once per GitLab instance. Each step ends with a check.
 
 **1. Put this repository in your GitLab.** Create a group `platform` and a
-project `ci-baseline` in it, then push this repository there.
+project `pipeline-templates` in it, then push this repository there.
 
 > Check: the project shows a `templates/` folder with five files.
 
