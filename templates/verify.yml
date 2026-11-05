@@ -1,0 +1,44 @@
+# verify: refuses to go on unless an image carries your signature.
+#
+# What it does
+#   Checks the signature on the image with your public key. Put it before a
+#   deploy, so a pipeline stops here rather than at admission.
+#
+# What the project needs, under Settings > CI/CD > Variables
+#   COSIGN_PUB  Type "File". The public key, the contents of cosign.pub. It is
+#               not a secret.
+#
+# How to read the result
+#   Passed: "The signatures were verified against the specified public key".
+#   Failed: "no signatures found" means nobody signed it. "no matching
+#   signatures" means someone did, with another key. Either way, do not deploy.
+spec:
+  description: >-
+    Checks an image's signature against the public key in the CI/CD file
+    variable COSIGN_PUB. Fails when the image is unsigned or signed with another
+    key. There is no transparency log, so it works inside an enclave.
+  inputs:
+    stage:
+      default: deploy
+      description: The pipeline stage this job runs in. Put it before the deploy.
+    image:
+      description: The image to check, pinned by digest.
+    http_registry:
+      type: boolean
+      default: false
+      description: Set to true only for a registry without TLS, such as a test setup.
+    cosign_image:
+      default: ghcr.io/sigstore/cosign/cosign:v3.1.4-dev@sha256:8af1a2cf9fba903fdfc6bdafdc25f7b13ef34ad722095543ea787fb96f7240c1
+      description: >-
+        The cosign image, pinned by digest. The -dev variant, because GitLab
+        needs a shell in the image and the plain one has none.
+---
+verify:
+  stage: $[[ inputs.stage ]]
+  image:
+    name: $[[ inputs.cosign_image ]]
+    entrypoint: [""]
+  script:
+    - >-
+      cosign verify --key "$COSIGN_PUB" --insecure-ignore-tlog
+      --allow-http-registry=$[[ inputs.http_registry ]] "$[[ inputs.image ]]"
